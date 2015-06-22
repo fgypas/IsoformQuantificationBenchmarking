@@ -1,0 +1,125 @@
+###########################################################################################
+### Andreas R. Gruber, Alexander Kanitz & Foivos Gypas, Biozentrum, University of Basel ###
+### andreas.gruber@unibas.ch, alexander.kanitz@unibas.ch & foivos.gypas@unibas.ch       ###
+### 26-MAY-2015                                                                         ###
+###########################################################################################
+
+
+################
+####  NOTES  ###
+################
+
+# To get count tables of reads per 3'-end processing region, set an analysis path (step 1) and download and extract
+# required resources and scripts (step 2). Then run steps 3 to 11 interactively, and separately for each input FASTQ
+# file (4 samples: human and mouse, 2 replicates each). FASTQ files are available at 
+# "http://www.clipz.unibas.ch/benchmarking" or at the SRA ("http://www.ncbi.nlm.nih.gov/sra") under accession
+# 'SRP051039'. Finally, interactively run steps 12 through 15, separately for each organism. The resulting count tables
+# (one for human, one for mouse) will contain the summarized counts per 3'-processing region for both replicates and
+# are ready for use in the script '4B.GET_ASEQ_EXPRESSION', located in *this* directory. Make sure to replace all
+# placeholders (marked with angular brackets) before executing the commands. When the placeholder starts with a number
+# (input/output files), any path with read/write access can be chose as long as the paths specified for corresponding
+# placeholders match (i.e. input filepaths of a given step must match the output file paths of an earlier step).  
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# The location/path of the following binary needs to be known:
+# - samtools, 0.1.19 (available at http://sourceforge.net/projects/samtools/files/samtools/)
+
+# 1. Set root path (replace THIS_DIR with the directory where *this* file is located
+root=<THIS_DIR>
+
+# 2. Download and extract required resources (if you have not done so already in
+# "2.SIMULATE_READS_(INTERACTIVE,IRREPRODUCIBLE).")
+wget --directory-prefix "$root/resources" "http://www.clipz.unibas.ch/benchmarking/data/resources.tar.gz"
+tar xzvf "$root/resources/resources.tar.gz"
+
+
+########################################
+### GET 3'-END SITES FOR EACH SAMPLE ###
+########################################
+
+# Repeat steps 3 through 11 for all A-seq-2 FASTQ files (4 samples: 2 organisms * 2 replicates) to get the coordinates
+# of the 3'-end of reads for the A-seq-2 sequencing libraries.
+
+# 3. Convert FASTQ to FASTA and rename reads
+zcat <FASTQ> | fastq_to_fasta -Q33 | fastx_renamer -n "COUNT" -z > <3>
+
+# 4. Trim 5' adapter 'NNNNTTT' if present, else discard read
+zcat <3> | perl "$root/resources/ag-filter-by-5p-adapter.pl" --adapter="....TTT" | gzip > <4>
+
+# 5. Remove 3' adapter fragments if present & discard reads shorter than 15 nts (after trimming)
+perl "$root/resources/ag-remove-adapter-wrapper.pl" --aln2seq="$root/resources/ag-remove-adapter-aln2seq_IOeff" --blastscores="$root/resources/ag-remove-adapter-blast-scores" --removeAdaptor="$root/resources/ag-remove-adapter-script.pl" -a "TGGAATTCTCGGGTGCCAAGG" <4> | fastx_reverse_complement | gzip > <5>
+
+# 6. Collapse reads with identical sequences
+zcat <5> | fastx_collapser | gzip > <6>
+
+# 7A. Align reads to the genome
+# [WARNING: Mapping reads to the genome requires tens of Gb of memory]
+# Substitute the placeholders with the following PATHs, depending on the organism:
+# --index:  "$root/resources/hg19_sm_no_hapl.idx" (human)  OR  "$root/resources/mm10_sm_no_hapl.idx" (mouse)
+# --database:  "$root/resources/hg19_sm_no_hapl.fa" (human)  OR  "$root/resources/mm10_sm_no_hapl.fa" (mouse)
+# To accelerate this step, specify an INT > 1 to perform the analysis with INT cores
+segemehl.x --index <PATH> --database <PATH> --query <6> --differences 1 --accuracy 90 --threads <INT> --silent --outfile <7A>
+
+# 7B. Align reads to the transcriptome
+# Substitute the placeholders with the following PATHs, depending on the organism:
+# --index:  "$root/resources/hg19.transcripts_aseq.idx" (human)  OR  "$root/resources/mm10.transcripts_aseq.idx" (mouse)
+# --database:  "$root/resources/hg19.transcripts_aseq.fa.gz" (human)  OR  "$root/resources/mm10.transcripts_aseq.fa.gz" (mouse)
+# To accelerate this step, specify an INT > 1 to perform the analysis with INT cores
+segemehl.x --index <PATH> --database <PATH> --query <6> --differences 1 --accuracy 90 --threads <INT> --silent --outfile <7B>
+
+# 8A. Convert genome alignments from SAM to BED format
+# Specify the PATH to the 'samtools' binary as an argument to '--samtools'
+# To accelerate this step, specify an INT > 1 to perform the analysis with INT cores
+perl "$root/resources/ag-sam2bed.pl" --bed-unique=<8A.1> --bed-multi=<8A.2> --samtools=<PATH> --samToBed="$root/resources/mb-sam-to-bed-multiprocess.py" --threads <INT> <7A>
+
+# 8B. Convert transcriptome alignments from SAM to BED format and re-map to genomic coordinates
+# Specify the PATH to the 'samtools' binary as an argument to '--samtools'
+# To accelerate this step, specify an INT > 1 to perform the analysis with INT cores
+# Substitute the placeholders with the following PATHs, depending on the organism:
+# --mapfile:  "$root/resources/hg19.transcripts.map.gz" (human)  OR  "$root/resources/mm10.transcripts.map.gz" (mouse)
+# --if1file:  "$root/resources/hg19.if1.gz" (human)  OR  "$root/resources/mm10.if1.gz" (mouse)
+perl "$root/resources/ag-sam2bed.pl" --bed-unique=<8B> --samtools=<PATH> --samToBed="$root/resources/mb-sam-to-bed-multiprocess.py" --threads <INT> --transcriptome --mapfile=<PATH> --if1file=<PATH> --bedToGenome="$root/resources/mb-parse-genomic-coordinates-multiprocess.py" <7B>
+
+# 9. Merge transcriptome and genome mappings
+perl "$root/resources/ag-get-best-mapping.pl" <8A.1> <8B> | gzip > <9>
+
+# 10. Get 3' end sites for uniquely mapping reads
+zcat <9> | perl "$root/resources/ag-get-3pEnds-from-bed.pl" --exclude="chrM" --correction=0 | gzip > <10>
+
+# 11. Get 3' end sites for multimappers
+perl "$root/resources/ag-reformat-multimappers.pl" <8A.2> | gzip > <11>
+
+
+################################################################
+### COUNT READS PER 3'-END PROCESSING SITE FOR EACH ORGANISM ###
+################################################################
+
+# Read counts for each 3-end processing site are computed by intersecting the 3'-end coordinates of reads with those of
+# known poly(A)/3'-end processing regions. Replicates of a given organism are processed together, therefore steps 12
+# through 15 have to be executed only once for human and once for mouse.
+
+# 12. Quantify clusters for uniquely mapping reads
+# Substitute the placeholder with either of the following PATHs, depending on the organism:
+# --clusters:  "$root/resources/polyA_regions.human.bed" (human)  OR  "$root/resources/polyA_regions.mouse.bed" (mouse)
+# Substitute the placeholder with either of the following PATHs, depending on the organism:
+# --IPfile:  "$root/resources/hg19.internal_priming.bed.gz" (human)  OR  "$root/resources/mm10.internal_priming.bed.gz" (mouse)
+# Substitute the placeholders with the following STRINGs:
+# --name:  "hsa_1" & "hsa_2" (human)  OR  "mmu_1" & "mmu_2" (mouse)
+# '#1' and '#2' refers to the sample replicates of a given organism.
+perl "$root/resources/ag-pas-quant.pl" --sample=<10.#1> --name=<STRING.#1> --sample=<10.#2> --name=<STRING.#2> --clusters=<PATH> --scoreAsReadCount --minLevel=2 --chrM="chrM" --IPfile=<PATH> > <10>
+
+# 13. Quantify clusters for multimappers
+# Substitute the placeholders as in step 12. Use the same STRINGs for the '--name' option.
+perl "$root/resources/ag-pas-quant.pl" --sample=<11.#1> --name=<STRING.#1> --sample=<11.#2> --name=<STRING.#2> --clusters=<PATH> --scoreAsReadCount --minLevel=2 --chrM="chrM" --IPfile=<PATH> > <11>
+
+# 14. Merge uniquely mapping reads and multimappers
+perl "$root/resources/ag-merge.pl" <10> <11> > <12>
+
+# 15. Copy file for later use
+# Substitute the placeholders with either of the following PATHs, depending on the organism:
+# <PATH>:  "$root/tmp/polyA/counts.hs" (human)  OR  "$root/tmp/polyA/counts.mm" (mouse)
+cp <12> <PATH>

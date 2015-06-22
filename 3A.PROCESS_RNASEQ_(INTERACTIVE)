@@ -1,0 +1,106 @@
+########################################################################
+### Foivos Gypas & Alexander Kanitz, Biozentrum, University of Basel ###
+### foivos.gypas@unibas.ch & alexander.kanitz@unibas.ch              ###
+### 01-JUN-2015                                                      ###
+########################################################################
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# 0. Set root path (replace THIS_DIR with the directory where *this* file is located) and create a temporary directory
+root=<THIS_DIR>
+mkdir --parents "$root/tmp/sim"
+
+
+############
+### MAIN ###
+############
+
+# 1. Remove adapter
+cutadapt --adapter TGGAATTCTCGGGTGCCAAGG --error-rate 0.1 --minimum-length 15 --overlap 1 <FASTA/FASTQ> --output <FASTA/FASTQ>
+						
+# 2. Remove PolyA tails
+cutadapt --adapter AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA --error-rate 0.1 --minimum-length 15 --overlap 1 <FASTA/FASTQ (step 1)> --output <FASTA/FASTQ>
+						
+# 3. Collapse reads
+fastx_collapser -i <FASTA/FASTQ (step 2)> -o <FASTA/FASTQ>
+						
+# 4a. Align reads to the genome
+segemehl.x --index <GENOME.idx> --database <GENOME.fa> --query <FASTA/FASTQ (step 3)> --differences 1 --accuracy 90 --threads <NUM_OF_THREADS> --silent --outfile <SAM> --nomatchfilename <SAM_unmatched>
+						
+# 4b. Align reads to the transcriptome
+segemehl.x --index <TRANSCRIPTOME.idx> --database <TRANSCRIPTOME.fa> --query <FASTA/FASTQ (step 3)> --differences 1 --accuracy 90 --threads <NUM_OF_THREADS> --silent --outfile <SAM> --nomatchfilename <SAM_unmatched>
+						
+# 5a. Split header body (genomic alignment)
+perl sam_split_body_header.pl --sam <SAM (step 4a)> --body <SAM> --head <HEADER>
+						
+# 5b. Split header body (transcriptomic alignment)
+perl sam_split_body_header.pl --sam <SAM (step 4b)> --body <SAM> --head <HEADER>
+						
+# 6. Merge headers
+bash sam_merge_gen_trx_headers.sh <HEADER (step 5a)> <HEADER (step 5b)> > <HEADER>
+						
+# 7. Annotate header
+bash sam_annotate_header.sh <HEADER (step 5b)> [COMMENT_LINES] > <HEADER>
+						
+# 8. Convert transcriptomic alignment to genomic coordinates
+perl sam_trx_to_sam_gen.pl --tag TRX --include-monoexonic --min-overlap 5 --exons EXONS --in <SAM (step 5b)> --out <SAM>
+						
+# 9. Merge and sort alignments
+bash sam_cat_sort.sh --temporary-directory <TMP_DIR> --buffer-size <BUFFER_SIZE> --parallel <THREADS> --verbose -- <SAM (step 5a)> <SAM (step 8)> > <SAM>
+						
+# 10. Filter genomic alignments
+perl sam_filter_gen.pl --keep-mm 0 --new-header <HEADER (step 6)> --in <SAM (step 9)> --mm MULTIMAPPERS --nm EDIT_DISTANCES --out <SAM>
+						
+# 11. Filter transcriptomic alignments
+perl sam_filter_trx.pl --keep-mm 0 --new-header <HEADER (step 7)> --mm <MULTIMAPPERS (step 9)> --nm <EDIT_DISTANCES (step 9)> --in <SAM (step 5b) --out <SAM>
+						
+# 12a. Uncollapse genomic alignments
+perl sam_uncollapse.pl --in <SAM (step 10)> --suffix --out <SAM>
+						
+# 12b. Uncollapse transcriptomic alignments
+perl sam_uncollapse.pl --in <SAM (step 11)> --suffix --out <SAM>
+						
+# 13a. SAM to name sorted BAM (genome)
+samtools view -bS <SAM (step 12a)> | samtools sort -n - <BAM>
+						
+# 13b. SAM to name sorted BAM (transcriptome)
+samtools view -bS <SAM (step 12b)> | samtools sort -n - <BAM>
+						
+# 14a. BAM to SAM (genome)
+samtools view -h <BAM (step 13a)> > <SAM>
+						
+# 14b. BAM to SAM (transcriptome)
+samtools view -h <BAM (step 13b)> > <SAM>
+						
+# 15a. Rename reads (genome)
+perl rename_alignments.pl <SAM (step 13a)> > <SAM>
+						
+# 15b. Rename reads (transcriptome)
+perl rename_alignments.pl <SAM (step 13b)> > <SAM>
+						
+# 16a. SAM to sorted indexed BAM (genome)
+samtools view -bS <SAM (step 15a)> | samtools sort - <BAM>
+samtools index <BAM>
+						
+# 16b. SAM to name sorted indexed BAM (genome)
+samtools view -bS <SAM (step 15a)> | samtools sort -n - <BAM>
+samtools index <BAM>
+						
+# 16c. SAM to sorted indexed BAM (transcriptome)
+samtools view -bS <SAM (step 15b)> | samtools sort - <BAM>
+samtools index <BAM>
+						
+# 16d. SAM to name sorted indexed BAM (transcriptome)
+samtools view -bS <SAM (step 15a)> | samtools sort -n - <BAM>
+samtools index <BAM>
+						
+# 17. Add linked list encoding (optional)
+samtools view -h <BAM (step 16a|b)> | perl sam_add_mm_linked_list_encoding.pl --link-mm --nh --mapq --qual --remove-custom-tags | \
+samtools view -bS - | samtools sort -n - <BAM_prefix>
+						
+# 18. Add quality scores (optional)
+samtools view -h <BAM (step 17) | python sam_substitute_qual.py <DICT> 	| \
+samtools view -bS - | samtools sort -n - <BAM_prefix>

@@ -1,0 +1,120 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 31-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# Here, the 'streamlined' expression estimate tables from step '6.PROCESS_ESTIMATES' are analyzed according to various
+# metrics. In particular, Pearson and Spearman correlation coefficients as well as the root mean square errors (RMSE)
+# are computed for pair-wise comparisons between 1. estimates and a reference (simulation 'ground truth' or A-seq-2
+# estimates), and 2. estimates of different replicates. For the estimate/reference comparisons, also the rates of true/
+# false positives/negatives are computed. Tables for each metric are written to "./analyzed_data", relative to *this*
+# directory. Finally, scatter plots for all pair-wise comparisons are generated in PNG format by default (location: 
+# "./plots/scatter", relative to *this* directory).
+
+# It is possible to easily change the output format for the scatter plots in the "USER PARAMETERS" section. It is also
+# possible to generate the plots in multiple formats at once. However, when the estimates of all methods are
+# considered, several thousand plots are generated even for a single format. Moreover, generating output in PDF and
+# particularly SVG format dramatically increases runtime. If a quick analysis is desired, plotting can be disabled by
+# removing the '--plot' switch from the various calls of the analysis script. Alternatively, calls to the script can be
+# parallelized.
+
+
+#########################
+###  USER PARAMETERS  ###
+#########################
+
+# File format for plots; one or more of "pdf", "svg", "png", "$plot_format" (separate by comma but no spaces, e.g. "pdf,png"); alternatively, "all" generates all formats
+plot_format="png"
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+# Make output directory
+outDir="$root/analyzed_data"
+outDirPlots="$root/plots/scatter"
+mkdir --parents $outDir
+mkdir --parents $outDirPlots
+
+# Set global parameters
+analysis_script="$root/scripts/tab_correlations_type_analysis_scatter_tab.R"
+feature_subsets_sim="$root/resources/feature_subsets.sim.R"
+feature_subsets_hsa="$root/resources/feature_subsets.hsa.R"
+feature_subsets_mmu="$root/resources/feature_subsets.mmu.R"
+
+
+#########################################
+###  COMPARE ESTIMATES TO REFERENCES  ###
+#########################################
+
+#<--- Simulations, 1 million reads --->#
+Rscript "$analysis_script" --experiment "sim_1" --feature-type "trx" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_1/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "sim_1" --feature-type "gene" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_1/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Simulations, 3 million reads --->#
+Rscript "$analysis_script" --experiment "sim_3" --feature-type "trx" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_3/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "sim_3" --feature-type "gene" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_3/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Simulations, 10 million reads --->#
+Rscript "$analysis_script" --experiment "sim_10" --feature-type "trx" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_10/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "sim_10" --feature-type "gene" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_10/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Simulations, 30 million reads --->#
+Rscript "$analysis_script" --experiment "sim_30" --feature-type "trx" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_30/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "sim_30" --feature-type "gene" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_30/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Simulations, 100 million reads --->#
+Rscript "$analysis_script" --experiment "sim_100" --feature-type "trx" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_100/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "sim_100" --feature-type "gene" --feature-subsets-R "$feature_subsets_sim" --input-directory "$root/tmp/expr/sim_100/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Human, replicate 1 --->#
+Rscript "$analysis_script" --experiment "hsa_1" --feature-type "pas" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa_1" --feature-type "gene" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Human, replicate 2 --->#
+Rscript "$analysis_script" --experiment "hsa_2" --feature-type "pas" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_2/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa_2" --feature-type "gene" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_2/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Mouse, replicate 1 --->#
+Rscript "$analysis_script" --experiment "mmu_1" --feature-type "pas" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu_1" --feature-type "gene" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Mouse, replicate 2 --->#
+Rscript "$analysis_script" --experiment "mmu_2" --feature-type "pas" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_2/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu_2" --feature-type "gene" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_2/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*.estimates" --glob-reference "*.reference" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+
+############################
+###  COMPARE REPLICATES  ###
+############################
+
+#<--- Human --->#
+Rscript "$analysis_script" --experiment "hsa" --feature-type "trx" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1/trx" --replicate-directory "$root/tmp/expr/hsa_2/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 5 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa" --feature-type "pas" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1/pas" --replicate-directory "$root/tmp/expr/hsa_2/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa" --feature-type "gene" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1/gene" --replicate-directory "$root/tmp/expr/hsa_2/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa_no_filter" --feature-type "trx" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1_no_filter/trx" --replicate-directory "$root/tmp/expr/hsa_2_no_filter/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 5 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "hsa_no_filter" --feature-type "gene" --feature-subsets-R "$feature_subsets_hsa" --input-directory "$root/tmp/expr/hsa_1_no_filter/gene" --replicate-directory "$root/tmp/expr/hsa_2_no_filter/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+
+#<--- Mouse --->#
+Rscript "$analysis_script" --experiment "mmu" --feature-type "trx" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1/trx" --replicate-directory "$root/tmp/expr/mmu_2/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 5 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu" --feature-type "pas" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1/pas" --replicate-directory "$root/tmp/expr/mmu_2/pas" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 4 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu" --feature-type "gene" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1/gene" --replicate-directory "$root/tmp/expr/mmu_2/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu_no_filter" --feature-type "trx" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1_no_filter/trx" --replicate-directory "$root/tmp/expr/mmu_2_no_filter/trx" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 5 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15
+Rscript "$analysis_script" --experiment "mmu_no_filter" --feature-type "gene" --feature-subsets-R "$feature_subsets_mmu" --input-directory "$root/tmp/expr/mmu_1_no_filter/gene" --replicate-directory "$root/tmp/expr/mmu_2_no_filter/gene" --output-directory "$outDir" --output-directory-plots "$outDirPlots" --glob-sample "*" --metrics "all" --pseudocount "1/32" --true-false-analysis --subset-stats --subset-stats-reference 6 --plot --plot-format "$plot_format" --plot-min -5 --plot-max 15

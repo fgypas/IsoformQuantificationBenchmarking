@@ -1,0 +1,273 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 26-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# The files produced here are used for generating alignments, running the different estimation tools and analyzing
+# their output. In some cases, tools have special requirements regarding input files or their formats. However, all
+# annotation/sequence files supplied as input are ultimately derived from the files produced here. Additional
+# processing steps specific to one or few tools are performed elsewhere. If all dependencies are met (see separate
+# file), this script should - in principle - create all files autonomously. However, some steps require large amounts
+# of memory. In particular, the 'segemehl' short-read aligner uses up to 75 GB of memory for genome index creation. If
+# necessary, modify the script such that these steps are referred to a machine with sufficient available memory.
+# Alternatively, refer to the 'segemehl' manual (available at http://www.bioinf.uni-leipzig.de/Software/segemehl/) to
+# learn how to reduce memory requirments (e.g. by indexing individual chromosomes separately).
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+
+#################
+###  GENOMES  ###
+#################
+
+# Genome sequence files are obtained from UCSC (releases hg19 and mm10 for human and mouse, respectively), with repeat
+# regions soft-masked. "Haploid chromosome" versions are discarded. Indices for the short read aligner 'segemehl' are
+# generated from the concatenated chromosome sequences.
+
+# Make temporary directories for human and mouse genome files
+mkdir --parents "$root/tmp/hg19"
+mkdir --parents "$root/tmp/mm10"
+
+# Download & extract genome archive files
+wget --directory-prefix "$root/tmp/hg19" "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/bigZips/chromFa.tar.gz"
+wget --directory-prefix "$root/tmp/mm10" "http://hgdownload.cse.ucsc.edu/goldenPath/mm10/bigZips/chromFa.tar.gz"
+tar --extract --gzip --file "$root/tmp/mm10/chromFa.tar.gz" --directory "$root/tmp/mm10"
+tar --extract --gzip --file "$root/tmp/hg19/chromFa.tar.gz" --directory "$root/tmp/hg19"
+
+# Remove haplotype chromosomes & concatenate remaining chromosomes
+rm --force "$root/tmp/hg19/chr*_hap*.fa"
+rm --force "$root/tmp/mm10/chr*_hap*.fa"
+cat "$root/tmp/hg19/chr*.fa" > "$root/resources/hg19_sm_no_hapl.fa"
+cat "$root/tmp/mm10/chr*.fa" > "$root/resources/mm10_sm_no_hapl.fa"
+
+# Generate 'segemehl' indices
+# [WARNING: Indexing requires tens of Gb of memory]
+segemehl.x --generate "$root/resources/hg19_sm_no_hapl.idx" --database "$root/resources/hg19_sm_no_hapl.fa"
+segemehl.x --generate "$root/resources/mm10_sm_no_hapl.idx" --database "$root/resources/mm10_sm_no_hapl.fa"
+
+
+##########################
+###  GENE ANNOTATIONS  ###
+##########################
+
+# Gene annotations are obtained from GENCODE release (v19) and are equivalent to the annotations provided by ENSEMBL
+# (release 74), but with slight differences in the format, making their reference sequence/chromosome names compatible
+# with UCSC genomes. A few modifications are required, however, to render them compatible with the transcript sequences
+# as downloaded from ENSEMBL (see below). For the mapping of alignments from transcript to genome coordinates, BED
+# files of exons are generated. Moreover, filtered versions of the transcript annotation sets, containing only those
+# transcripts that are likely to be polyadenyalted, are generated for the comparisons of expression estimates and
+# A-seq-2 count-based quantification. Finally, several temporary files are generated for usage in later processing
+# steps.
+
+# Make directory for temporary files
+mkdir --parents "$root/tmp/anno"
+
+# Download GENCODE annotation files
+wget --directory-prefix "$root/tmp/anno" "ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz"
+wget --directory-prefix "$root/tmp/anno" "ftp://ftp.sanger.ac.uk/pub/gencode/Gencode_mouse/release_M2/gencode.vM2.annotation.gtf.gz"
+
+# For compatibility with ENSEMBL transcript FASTA files, remove gene and transcript ID version numbers as well as those entries with an ID starting with 'ENSGR' or 'ENSTR' (human only!)
+zcat "$root/tmp/anno/gencode.v19.annotation.gtf.gz" | sed --regexp-extended 's/(ENS[GT][[:digit:]]{11})\.[[:digit:]]{1,}/\1/g' | grep --invert-match --perl-regexp "ENS[GT]R" > "$root/resources/gencode.v19.annotation.ENS_compatible.gtf"
+zcat "$root/tmp/anno/gencode.vM2.annotation.gtf.gz" | sed --regexp-extended 's/(ENSMUS[GT][[:digit:]]{11})\.[[:digit:]]{1,}/\1/g' > "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf"
+
+# Generate BED files of exons
+Rscript "$root/scripts/gtf_exons_bed.R" --gtf "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" --bed "$root/tmp/anno/GC19.exons_unsorted" --name "transcript_id" --score 0
+Rscript "$root/scripts/gtf_exons_bed.R" --gtf "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" --bed "$root/tmp/anno/GCM2.exons_unsorted" --name "transcript_id" --score 0
+
+# Enforce required sorting order for exons
+sort --numeric-sort --stable --key 3,3 "$root/tmp/anno/GC19.exons_unsorted" | sort --numeric-sort --stable --key 2,2 | sort --dictionary-order --stable --key 4,4 > "$root/resources/gencode.v19.exons.ENS_compatible.bed"
+sort --numeric-sort --stable --key 3,3 "$root/tmp/anno/GCM2.exons_unsorted" | sort --numeric-sort --stable --key 2,2 | sort --dictionary-order --stable --key 4,4 > "$root/resources/gencode.vM2.exons.ENS_compatible.bed"
+
+# Extract unique sets of transcript IDs for transcript sequence selection (see below)
+grep --only-matching --perl-regex "ENST\d{11}" "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" | sort --unique > "$root/tmp/anno/GC19.transcript_ids"
+grep --only-matching --perl-regex "ENSMUST\d{11}" "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" | sort --unique > "$root/tmp/anno/GCM2.transcript_ids"
+
+# Remove transcripts that are unlikely to be polyadenylated
+Rscript "$root/scripts/gtf_filter_gtf.R" --gtf-in "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.gtf" --transcript-type-filter "antisense,processed_pseudogene,lincRNA,nonsense_mediated_decay,retained_intron,processed_transcript,protein_coding"
+Rscript "$root/scripts/gtf_filter_gtf.R" --gtf-in "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.gtf" --transcript-type-filter "antisense,processed_pseudogene,lincRNA,nonsense_mediated_decay,retained_intron,processed_transcript,protein_coding"
+
+# Extract transcript end coordinates from complete and filtered transcript sets for intersection with 3'-end processing regions (see below; unfiltered only required for human -> used for the analysis of simulated/synthetic data)
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" | awk -v OFS="\t" -v FS="\t" '{if ($7 == "+") print $1, $2, $3, $5, $5, $6, $7, $8, $9; else if ($7 == "-") print $1, $2, $3, $4, $4, $6, $7, $8, $9}' > "$root/tmp/anno/GC19_ends"
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.gtf" | awk -v OFS="\t" -v FS="\t" '{if ($7 == "+") print $1, $2, $3, $5, $5, $6, $7, $8, $9; else if ($7 == "-") print $1, $2, $3, $4, $4, $6, $7, $8, $9}' > "$root/tmp/anno/GC19_ends.filt"
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.gtf" | awk -v OFS="\t" -v FS="\t" '{if ($7 == "+") print $1, $2, $3, $5, $5, $6, $7, $8, $9; else if ($7 == "-") print $1, $2, $3, $4, $4, $6, $7, $8, $9}' > "$root/tmp/anno/GCM2_ends.filt"
+
+
+########################
+###  TRANSCRIPTOMES  ###
+########################
+
+# Transcript sequences are obtained from ENSEMBL (release 74, compatible with GENCODE v19), since the transcript
+# sequence set provided by GENCODE does not include sequences for all the transcripts it describes. Sequences present
+# in the original ENSEMBL files are filtered to only include those transcripts described in the GENCODE annotation
+# files. Indices for short read aligner 'segemehl' are generated.
+
+# Make directory for temporary files
+mkdir --parents "$root/tmp/trx"
+
+# Download sequences of protein-coding and non-coding RNA transcripts from ENSEMBL (release 74)
+wget --directory-prefix "$root/tmp/trx" "ftp://ftp.ensembl.org/pub/release-74/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh37.74.cdna.all.fa.gz"
+wget --directory-prefix "$root/tmp/trx" "ftp://ftp.ensembl.org/pub/release-74/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.74.cdna.all.fa.gz"
+wget --directory-prefix "$root/tmp/trx" "ftp://ftp.ensembl.org/pub/release-74/fasta/homo_sapiens/ncrna/Homo_sapiens.GRCh37.74.ncrna.fa.gz"
+wget --directory-prefix "$root/tmp/trx" "ftp://ftp.ensembl.org/pub/release-74/fasta/mus_musculus/ncrna/Mus_musculus.GRCm38.74.ncrna.fa.gz"
+
+# Extract and concatenate transcript sequences files
+zcat "$root/tmp/trx/Homo_sapiens.GRCh37.74.cdna.all.fa.gz" "$root/tmp/trx/Homo_sapiens.GRCh37.74.ncrna.fa.gz" > "$root/tmp/trx/HS74"
+zcat "$root/tmp/trx/Mus_musculus.GRCm38.74.cdna.all.fa.gz" "$root/tmp/trx/Mus_musculus.GRCm38.74.ncrna.fa.gz" > "$root/tmp/trx/MM74"
+
+# Filter only those sequences that are present in the gene annotation sets
+perl -ne 'if(/^>(\S+)/){$c=$i{$1}}$c?print:chomp;$i{$_}=1 if @ARGV' "$root/tmp/anno/GC19.transcript_ids" "$root/tmp/trx/HS74" > "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.fa"
+perl -ne 'if(/^>(\S+)/){$c=$i{$1}}$c?print:chomp;$i{$_}=1 if @ARGV' "$root/tmp/anno/GCM2.transcript_ids" "$root/tmp/trx/MM74" > "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.fa"
+
+# Generate segemehl indices
+segemehl.x --generate "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.idx" --database "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.fa"
+segemehl.x --generate "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.idx" --database "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.fa"
+
+# Get transcript lengths
+perl "$root/scripts/fasta_seq_lengths.pl" --trim-id "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.fa" > "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.seq_lengths.tab"
+perl "$root/scripts/fasta_seq_lengths.pl" --trim-id "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.fa" > "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.seq_lengths.tab"
+
+# Get GC content information
+perl "$root/scripts/fasta_gc_content.pl" --trim-id "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.fa" > "$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.gc_content.tab"
+perl "$root/scripts/fasta_gc_content.pl" --trim-id "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.fa" > "$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.gc_content.tab"
+
+
+##############################################################################
+###  GENE ANNOTATIONS, TRANSCRIPTOMES & HELPER FILES FOR A-SEQ-2 ANALYSIS  ###
+##############################################################################
+
+# Gene annotations for the A-seq-2 analysis were downloaded through the "UCSC Table Browser" (https://genome.ucsc.edu)
+# (human: hg19/GENCODE v14; mouse: mm10/'ENSEMBL genes'). To facilitate reproduction of the data, we also host the
+# annotation files on our companion homepage (http://www.clipz.unibas.ch/benchmarking). Transcript sequences are
+# extracted based on these annotations and helper files are generated for future use.
+
+# Make directory for temporary files
+mkdir --parents "$root/tmp/aseq"
+
+# Download gene annotations (originally from "UCSC Table Browser")
+wget --directory-prefix "$root/tmp/aseq" "http://www.clipz.unibas.ch/benchmarking/data/hg19.gencode14.tsv.gz"
+wget --directory-prefix "$root/tmp/aseq" "http://www.clipz.unibas.ch/benchmarking/data/mm10.ensembl.tsv.gz"
+
+# Extract exon coordinates and convert to internal format
+python "$root/scripts/mb-gencode-to-if.py" "$root/tmp/aseq/hg19.gencode14.tsv.gz" > "$root/resources/hg19.if1"
+python "$root/scripts/mb-gencode-to-if.py" "$root/tmp/aseq/mm10.ensembl.tsv.gz" > "$root/resources/mm10.if1"
+
+# Extract exon sequences from chromosome sequences
+perl "$root/scripts/ag-extract-asym-chr-seq.pl" -l "$root/resources/hg19.if1" -d "$root/tmp/hg19/" --windowleft=0 --windowright=0 > "$root/tmp/aseq/hg19.if1.fa"
+perl "$root/scripts/ag-extract-asym-chr-seq.pl" -l "$root/resources/mm10.if1" -d "$root/tmp/mm10/" --windowleft=0 --windowright=0 > "$root/tmp/aseq/mm10.if1.fa"
+
+# Build transcript sequences
+python "$root/mb-generate-transcript-isoforms.py" --exonfasta "$root/tmp/aseq/hg19.if1.fa" --outputfasta "$root/resources/hg19.transcripts_aseq.fa" --outputmap "$root/resources/hg19.transcripts.map"
+python "$root/mb-generate-transcript-isoforms.py" --exonfasta "$root/tmp/aseq/mm10.if1.fa" --outputfasta "$root/resources/mm10.transcripts_aseq.fa" --outputmap "$root/resources/mm10.transcripts.map"
+
+# Compress files
+gzip "$root/resources/hg19.if1"; gzip "$root/resources/hg19.transcripts_aseq.fa"; gzip "$root/resources/hg19.transcripts.map"
+gzip "$root/resources/mm10.if1"; gzip "$root/resources/mm10.transcripts_aseq.fa"; gzip "$root/resources/mm10.transcripts.map"
+
+# Index transcript sequences
+segemehl.x --generate "$root/resources/hg19.transcripts_aseq.idx" --database "$root/resources/hg19.transcripts_aseq.fa.gz"
+segemehl.x --generate "$root/resources/mm10.transcripts_aseq.idx" --database "$root/resources/mm10.transcripts_aseq.fa.gz"
+
+
+##################################
+### 3'-END PROCESSING REGIONS  ###
+##################################
+
+# 3'-end processing regions for human and mouse are obtained from 'Poly(A) sites atlas' at 'PolyASite' available at
+# http://polyasite.unibas.ch/. Versions used in this study are from data freezes 1.0 (beta) for both organisms. For
+# subsequent processing (see below), subsets of transcripts whose ends intersect poly(A) sites are generated.
+
+# Make directory for temporary files
+mkdir --parents "$root/tmp/polyA"
+
+# Download clusters
+wget --output-document "$root/resources/polyA_regions.human.bed" "http://www.polyasite.unibas.ch/clusters/Homo_sapiens/1.0_beta/clusters.bed"
+wget --output-document "$root/resources/polyA_regions.mouse.bed" "http://www.polyasite.unibas.ch/clusters/Mus_musculus/1.0_beta/clusters.bed"
+
+# Find GENCODE transcripts ending within 3'-end processing regions (unfiltered only required for human -> used for the analysis of simulated/synthetic data)
+bedtools intersect -wo -s -a "$root/resources/polyA_regions.human.bed" -b "$root/tmp/anno/GC19_ends" > "$root/tmp/polyA/overlaps.hs"
+bedtools intersect -wo -s -a "$root/resources/polyA_regions.human.bed" -b "$root/tmp/anno/GC19_ends.filt" > "$root/tmp/polyA/overlaps.filt.hs"
+bedtools intersect -wo -s -a "$root/resources/polyA_regions.mouse.bed" -b "$root/tmp/anno/GCM2_ends.filt" > "$root/tmp/polyA/overlaps.filt.mm"
+
+
+#######################
+###  LOOKUP TABLES  ###
+#######################
+
+# Transcript ID -> poly(A) site ID, transcript ID -> gene ID and poly(A) site ID -> gene ID lookup tables are used to
+# aggregate transcript or poly(A) site estimates to obtain poly(A) site and/or gene estimates in subsequence analyses.
+
+# Make directory for temporary files
+mkdir --parents "$root/tmp/lookup"
+
+# Get transcript ID > gene ID lookup tables
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" | sed 's/ "/\t/g' | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut -f 10,12 | sort --key 2,2 --dictionary-order | awk -v OFS="\t" '{print $2, $1}' > "$root/resources/gencode.v19.annotation.ENS_compatible.trx_gene_lookup_table"
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" | sed 's/ "/\t/g' | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut -f 10,12 | sort --key 2,2 --dictionary-order | awk -v OFS="\t" '{print $2, $1}' > "$root/resources/gencode.vM2.annotation.ENS_compatible.trx_gene_lookup_table"
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.gtf" | sed 's/ "/\t/g' | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut -f 10,12 | sort --key 2,2 --dictionary-order | awk -v OFS="\t" '{print $2, $1}' > "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.trx_gene_lookup_table"
+awk -v OFS="\t" '$3 == "transcript"' "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.gtf" | sed 's/ "/\t/g' | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut -f 10,12 | sort --key 2,2 --dictionary-order | awk -v OFS="\t" '{print $2, $1}' > "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.trx_gene_lookup_table"
+
+# Get tables of poly(A) site, gene & transcript IDs (unfiltered only required for human -> used for the analysis of simulated/synthetic data)
+sed 's/ "/\t/g' "$root/tmp/polyA/overlaps.hs" | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut --fields 4,16,18 | sort --key 3,3 --dictionary-order --stable | sort --key 1,1 --dictionary-order --stable | sort --key 2,2 --dictionary-order --stable > "$root/tmp/lookup/ids.hs"
+sed 's/ "/\t/g' "$root/tmp/polyA/overlaps.filt.hs" | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut --fields 4,16,18 | sort --key 3,3 --dictionary-order --stable | sort --key 1,1 --dictionary-order --stable | sort --key 2,2 --dictionary-order --stable > "$root/tmp/lookup/ids.filt.hs"
+sed 's/ "/\t/g' "$root/tmp/polyA/overlaps.filt.mm" | sed 's/"; /\t/g' | sed 's/";\t/\t/g' | cut --fields 4,16,18 | sort --key 3,3 --dictionary-order --stable | sort --key 1,1 --dictionary-order --stable | sort --key 2,2 --dictionary-order --stable > "$root/tmp/lookup/ids.filt.mm"
+
+# Get transcript ID > poly(A) site ID lookup tables (unfiltered only required for human -> used for the analysis of simulated/synthetic data)
+cut -f1,3 "$root/tmp/lookup/ids.hs" | awk -v OFS="\t" '{print $2, $1}' | sort --dictionary-order --key 1,1 > "$root/resources/gencode.v19.annotation.ENS_compatible.trx_pas_lookup_table"
+cut -f1,3 "$root/tmp/lookup/ids.filt.hs" | awk -v OFS="\t" '{print $2, $1}' | sort --dictionary-order --key 1,1 > "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.trx_pas_lookup_table"
+cut -f1,3 "$root/tmp/lookup/ids.filt.mm" | awk -v OFS="\t" '{print $2, $1}' | sort --dictionary-order --key 1,1 > "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.trx_pas_lookup_table"
+
+# Get poly(A) site ID > gene ID lookup tables (unfiltered only required for human -> used for the analysis of simulated/synthetic data)
+cut -f1,2 "$root/tmp/lookup/ids.hs" | sort --unique | sort --dictionary-order --key 1,1 > "$root/resources/gencode.v19.annotation.ENS_compatible.pas_gene_lookup_table"
+cut -f1,2 "$root/tmp/lookup/ids.filt.hs" | sort --unique | sort --dictionary-order --key 1,1 > "$root/tmp/lookup/pas_gene.human"
+cut -f1,2 "$root/tmp/lookup/ids.filt.mm" | sort --unique | sort --dictionary-order --key 1,1 > "$root/tmp/lookup/pas_gene.mouse"
+
+# Remove ambiguous poly(A) site ID > gene ID associations to ensure many-to-1 relation (unfiltered not required)
+Rscript "$root/scripts/tab_remove_ambiguous_key_value_pairs_tab.R" --infile "$root/tmp/lookup/pas_gene.human" --outfile "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.pas_gene_lookup_table"
+Rscript "$root/scripts/tab_remove_ambiguous_key_value_pairs_tab.R" --infile "$root/tmp/lookup/pas_gene.mouse" --outfile "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.pas_gene_lookup_table"
+
+
+#################################
+###  GENE COUNTING RESOURCES  ###
+#################################
+
+# Additional resources are needed for the 'control' counting methods used for estimating expression on a per-gene
+# level. These include filtered/processed sets of exons or merged ('union') exons in either GTF or BED12 (BED12+3)
+# format.
+
+# Extract/subset exons of allowed transcripts for simulated data: exons with corresponding gene IDs
+Rscript "$root/scripts/gtf_exons_gtf.R" --gtf-in "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.v19.annotation.ENS_compatible.exons.gtf" --name-filter "$root/resources/gencode.v19.annotation.ENS_compatible.trx_gene_lookup_table" --column 1
+Rscript "$root/scripts/gtf_exons_gtf.R" --gtf-in "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.vM2.annotation.ENS_compatible.exons.gtf" --name-filter "$root/resources/gencode.vM2.annotation.ENS_compatible.trx_gene_lookup_table" --column 1
+
+# Extract/subset exons of allowed transcripts for experimental data: exons with gene IDs that have corresponding poly(A) site IDs
+Rscript "$root/scripts/gtf_exons_gtf.R" --gtf-in "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.exons.gtf" --name-filter "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.trx_pas_lookup_table" --column 1
+Rscript "$root/scripts/gtf_exons_gtf.R" --gtf-in "$root/resources/gencode.vM2.annotation.ENS_compatible.gtf" --gtf-out "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.exons.gtf" --name-filter "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.trx_pas_lookup_table" --column 1
+
+# Merge overlapping exons per gene ('union exons')
+Rscript "$root/scripts/gtf_union_exons_gtf.R" --gtf-in "$root/resources/gencode.v19.annotation.ENS_compatible.exons.gtf" --gtf-out "$root/resources/gencode.v19.annotation.ENS_compatible.union_exons.gtf"
+Rscript "$root/scripts/gtf_union_exons_gtf.R" --gtf-in "$root/resources/gencode.vM2.annotation.ENS_compatible.exons.gtf" --gtf-out "$root/resources/gencode.vM2.annotation.ENS_compatible.union_exons.gtf"
+Rscript "$root/scripts/gtf_union_exons_gtf.R" --gtf-in "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.exons.gtf" --gtf-out "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.union_exons.gtf"
+Rscript "$root/scripts/gtf_union_exons_gtf.R" --gtf-in "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.exons.gtf" --gtf-out "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.union_exons.gtf"
+
+# Build transcript annotation files in BED12 format (ID: gene_id$transcript_id)
+Rscript "$root/scripts/gtf_transcripts_bed12.R" --include-gene-id --gtf "$root/resources/gencode.v19.annotation.ENS_compatible.exons.gtf" --bed12 "$root/resources/gencode.v19.annotation.ENS_compatible.transcripts.bed12"
+Rscript "$root/scripts/gtf_transcripts_bed12.R" --include-gene-id --gtf "$root/resources/gencode.vM2.annotation.ENS_compatible.exons.gtf" --bed12 "$root/resources/gencode.vM2.annotation.ENS_compatible.transcripts.bed12"
+Rscript "$root/scripts/gtf_transcripts_bed12.R" --include-gene-id --gtf "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.exons.gtf" --bed12 "$root/resources/gencode.v19.annotation.ENS_compatible.filtered.transcripts.bed12"
+Rscript "$root/scripts/gtf_transcripts_bed12.R" --include-gene-id --gtf "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.exons.gtf" --bed12 "$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.transcripts.bed12"

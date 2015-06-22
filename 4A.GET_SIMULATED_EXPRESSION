@@ -1,0 +1,58 @@
+#!/bin/bash
+
+########################################################################
+### Foivos Gypas & Alexander Kanitz, Biozentrum, University of Basel ###
+### foivos.gypas@unibas.ch & alexander.kanitz@unibas.ch              ###
+### 26-MAY-2015                                                      ###
+########################################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# The 'true' expression of the simulated RNA-seq libraries ('ground truth') is calculated as described in the
+# manuscript. The resulting count tables are normalized and represent 'transcripts per million transcripts' (TPM).
+# Execution of this script is very fast and requires very little memory.
+
+# As with all wrapper scripts in step 4, the resulting count tables can also be obtained from:
+# "http://www.clipz.unibas.ch/benchmarking/data/count_tables.tar.gz"
+# and extracted in "./estimates", relative to *this* directory.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+# Make temporary directory
+mkdir "$root/tmp/sim"
+
+###################################################
+###  GET SIMULATED ('GROUND TRUTH') EXPRESSION  ###
+###################################################
+
+# Calculate normalized 'ground truth' expression as 'transcripts per million transcripts' (TPM)
+awk '(FNR == NR) {sum += $6; next}; {printf("%s\t%.15f\n", $2, ($6 / sum * 1000000))}' "$root/resources/flux_simulator.profile"{,} > "$root/tmp/sim/tpm"
+
+
+###################
+### COPY OUTPUT ###
+###################
+
+# Normalized 'ground truth' expression (as 'transcripts per million transcripts') are written to directory
+# './estimates', relative to *this* directory.
+
+# Copy 'ground truth' expression
+cp "$root/tmp/sim/tpm" "$root/estimates/sim_1.transcripts.Ground_truth.reference"
+cp "$root/tmp/sim/tpm" "$root/estimates/sim_3.transcripts.Ground_truth.reference"
+cp "$root/tmp/sim/tpm" "$root/estimates/sim_10.transcripts.Ground_truth.reference"
+cp "$root/tmp/sim/tpm" "$root/estimates/sim_30.transcripts.Ground_truth.reference"
+cp "$root/tmp/sim/tpm" "$root/estimates/sim_100.transcripts.Ground_truth.reference"

@@ -1,0 +1,40 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 27-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# In subsequent analyses, the influence of expression level 'categories', as well as various 'structural' gene/
+# transcript properties (e.g. transcript length, GC content, ...) on estimation accuracy is assessed. For this
+# purporse, transcript, poly(A) site and gene subsets are generated for the analysis of human, mouse and simulated/
+# synthetic read libraries.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+
+##########################
+###  ASSEMBLE SUBSETS  ###
+##########################
+
+# Generate transcript, gene and poly(A) site subsets for human, mouse and synthetic data
+Rscript "$root/scripts/compile_feature_subsets_hsa.R" "$root" "$root/resources/feature_subsets.hsa.R"
+Rscript "$root/scripts/compile_feature_subsets_mmu.R" "$root" "$root/resources/feature_subsets.mmu.R"
+Rscript "$root/scripts/compile_feature_subsets_sim.R" "$root" "$root/resources/feature_subsets.sim.R"

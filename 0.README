@@ -1,0 +1,143 @@
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 19-MAY-2015                                       ###
+#########################################################
+
+#############################
+###  GENERAL USAGE NOTES  ###
+#############################
+
+# The analyses described here were performed on (and optimized for) a cluster running CentOS6.5 Linux. In principle,
+# the scripts provided here should run on any Linux distribution as long as recent versions of Bash and the more
+# commonly used GNU utilties are available. Compatibility with OS X has not been tested, but experienced users should
+# have no problems with identifying and addressing potential problems.
+
+# Execution of the wrapper scripts available in this directory in ascending order (starting with 
+# '1.GET_PROCESS_RESOURCES') should (re)produce the plots available in the manuscript (in './plots' relative to this 
+# directory), with the exception of those that visualize the runtime and memory requirements since these require
+# careful planning and serial execution on a dedicated system in order to be representative. A few of the wrapper
+# scripts (those that contain 'INTERACTIVE' in their filenames) require user interaction, while most should run
+# autonomously.
+
+# By downloading files hosted on our companion website ("http://www.clipz.unibas.ch/benchmarking"), several of the more
+# time-consuming steps of the pipeline may be skipped, thus providing multiple entry points for users who have very
+# specific questions in mind.
+
+# All scripts were adapted such that all commands are executed on the machine that started the wrapper script. While
+# this guarantees some independence of a user's specific environment, scripts will inevitably fail if system resources
+# are not met. This is particularly problematic since some coomands need up to tens of Gb of memory (e.g. index
+# generation and mapping of/to the human genome with 'segemehl' used up to 75Gb of memory on our machines!), while
+# others will run with multi-threading enabled by default. Others again will require days to (possibly) weeks to
+# complete when they are executed 'as is'. It is therefore advised to carefully study the wrapper scripts before
+# execution, as they often contain warnings, offer potential solutions, allow setting of global parameters and give
+# information on how to best break them apart to run e.g. only those parts of the analysis that the user is interested
+# in. Finally, it is also in the wrapper scripts where instructions are given on how to forego a particular step in
+# favor of downloading the corresponding output files and copying them where they are expected by subsequent steps.
+
+# For users that are interested to use our datasets to analyze/benchmark new or improved methods against those tested
+# in our study, we offer a simple web solution with instructions at: "http://www.clipz.unibas.ch/benchmarking".
+# Alternatively, experienced users should - hopefully - find it relatively easy to follow the wrapper scripts and copy/
+# paste/edit what they need.
+
+# While we did our best to allow users to reproduce our analyses as well as to use our code to benchmark new methods,
+# we are of course aware that here and there problems will occur. Therefore, feel free to contact the main authors
+# * Alexander Kanitz, alexander.kanitz@unibas.ch
+# * Foivos Gypas, foivos.gypas@unibas.ch
+# at any time. However, if your problem clearly lies with the installation or execution of one of the methods
+# benchmarked in our study, it may be best to contact the authors of these tools directly.
+
+######################
+###  DEPENDENCIES  ###
+######################
+
+#======================#
+# THIRD-PARTY SOFTWARE #
+#======================#
+# Make sure the following programs/utilities are installed/available on your system. Moreover, the indicated binaries/
+# resources need execute permissions to be set and *must* be available, under the exact same names, in your $PATH.
+# Alternatively, references to any of the programs can of course be edited to indicate the absolute/relative locations
+# specific to your environment. In case of problems or unexpected results, make sure to use the indicated versions of
+# each program.
+
+#----------------------#
+# System tools / shell #
+#----------------------#
+# - GNU Awk, 3.1.5
+# 	- awk
+# - GNU bash, 4.3.0(1)
+#	- bash
+# - GNU coreutils, 8.9
+# 	- mkdir
+# 	- cat
+# 	- cd
+#	- cp
+# 	- cut
+# 	- rm
+# 	- pwd
+# 	- sort
+# - GNU grep, 2.5.1
+# 	- grep
+# - GNU sed, 4.1.5
+# 	- sed
+# - GNU tar, 1.15.1
+# 	- tar
+# - GNU Wget, 1.11.4
+# 	- wget
+# - gzip, 1.3.5
+# 	- gzip
+# 	- zcat
+
+#--------------------------------------#
+# Programming langauges / environments #
+#--------------------------------------#
+# - perl, 5.16.2
+# 	- perl
+# - Python, 2.7.6
+# - R, 3.1.0
+# 	- R
+# 	- Rscript
+
+#---------------------#
+# Benchmarked methods #
+#---------------------#
+
+#----------------------------#
+# Other bioinformatics tools #
+#----------------------------#
+# - bedtools, 2.19.1 (available at https://github.com/arq5x/bedtools2/)
+#	- bedtools
+# - FASTX Toolkit, 0.0.14 (available at http://hannonlab.cshl.edu/fastx_toolkit/)
+#	- fastq_to_fasta
+#	- fastx_renamer
+#	- fastx_collapser
+#	- fastx_reverse_complement
+# - samtools, 0.1.19 (available at http://sourceforge.net/projects/samtools/files/samtools/)
+# 	- samtools
+# - segemehl, 0.1.7-407 (available at http://www.bioinf.uni-leipzig.de/Software/segemehl/)
+# 	- segemehl.x
+# - cutadapt, 1.8 (available at http://code.google.com/p/cutadapt/)
+# 	- cutadapt
+
+#=============================#
+# NON-CORE PACKAGES / MODULES #
+#=============================#
+
+#--------#
+# Python #
+#--------#
+# - HTSeq
+# - numpy
+# - pysam
+# - Bio
+
+#----------------#
+# R/Bioconductor #
+#----------------#
+# - optparse, 1.2.0
+# - Bioconductor, 2.14
+# - rtracklayer, 1.24.2
+# - GenomicAlignments, 1.0.6
+# - Rsamtools, 1.16.1
+# - Hmisc
+# - LSD

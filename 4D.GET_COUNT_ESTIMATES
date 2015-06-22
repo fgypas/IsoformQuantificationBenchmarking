@@ -1,0 +1,137 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 27-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# Count methods 'union exon' and 'transcript' are applied to synthetic/simulated and experimental RNA-seq datasets as
+# described in the manuscript. The resulting count tables are normalized and represent 'reads per kilobase per million
+# reads' (RPKM). The resources available for 'samtools sort' (required for transcript-based counting), i.e. the number
+# of threads and the buffer size per thread, can be set manually under section "USER PARAMETERS". Serial execution of
+# the individual counting jobs takes several hours. However, the script can be modified such that more than one job is
+# executed at a time.
+
+# As with all wrapper scripts in step 4, the resulting count tables can also be obtained from:
+# "http://www.clipz.unibas.ch/benchmarking/data/count_tables.tar.gz"
+# and extracted in "./estimates", relative to *this* directory.
+
+
+#########################
+###  USER PARAMETERS  ###
+#########################
+
+# Parameters for sorting BAM files with 'samtools'; edit manually
+sort_threads=4	        # Use N concurrent threads (default: 4)
+sort_memory="2G"        # Buffer size per threads (default: "2G"). Recognized suffixes "%" (of total memory), "K" (for kilobyte), "M", "G" etc. Check 'GNU sort' and 'samtools sort' manuals for details.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+# Make temporary directories
+mkdir --parents "$root/tmp/count"
+
+
+######################################
+###  INDEX GENOME ALIGNMENT FILES  ###
+######################################
+
+# Loop over all files with extension ".gen.bam" in sequence library directory
+for file in $root/seq_libs/*.gen*.bam ; do samtools index $file; done
+
+
+###############################
+###  "UNION EXON" COUNTING  ###
+###############################
+
+# Define global variables
+gtf_sim="$root/resources/gencode.v19.annotation.ENS_compatible.union_exons.gtf"
+gtf_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.filtered.union_exons.gtf"
+gtf_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.union_exons.gtf"
+
+#<--- Simulations, 1 million reads --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/sim_1.gen.bam" --gtf "$gtf_sim" --counts "$root/estimates/sim_1.genes.Counting_Union_exon.estimates"
+
+#<--- Simulations, 3 million reads --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/sim_3.gen.bam" --gtf "$gtf_sim" --counts "$root/estimates/sim_3.genes.Counting_Union_exon.estimates"
+
+#<--- Simulations, 10 million reads --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/sim_10.gen.bam" --gtf "$gtf_sim" --counts "$root/estimates/sim_10.genes.Counting_Union_exon.estimates"
+
+#<--- Simulations, 30 million reads --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/sim_30.gen.bam" --gtf "$gtf_sim" --counts "$root/estimates/sim_30.genes.Counting_Union_exon.estimates"
+
+#<--- Simulations, 100 million reads --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/sim_100.gen.bam" --gtf "$gtf_sim" --counts "$root/estimates/sim_100.genes.Counting_Union_exon.estimates"
+
+#<--- Human, replicate 1 --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/mRNAseq_391-2_Jurkat.genomic.bam" --gtf "$gtf_hsa" --counts "$root/estimates/hsa_1.genes.Counting_Union_exon.estimates"
+
+#<--- Human, replicate 2 --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/mRNAseq_393-2_Jurkat.genomic.bam" --gtf "$gtf_hsa" --counts "$root/estimates/hsa_2.genes.Counting_Union_exon.estimates"
+
+#<--- Mouse, replicate 1 --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/mRNAseq_391-1_NIH-3T3.genomic.bam" --gtf "$gtf_mmu" --counts "$root/estimates/mmu_1.genes.Counting_Union_exon.estimates"
+
+#<--- Mouse, replicate 2 --->#
+Rscript "$root/scripts/bam_gtf_summarize_overlaps_tab.R" --normalize-counts --write-rpkm-only --inter-feature --bam "$root/seq_libs/mRNAseq_393-1_NIH-3T3.genomic.bam" --gtf "$gtf_mmu" --counts "$root/estimates/mmu_2.genes.Counting_Union_exon.estimates"
+
+
+###############################
+###  "TRANSCRIPT" COUNTING  ###
+###############################
+
+# Define global variables
+bed_sim="$root/resources/gencode.v19.annotation.ENS_compatible.transcripts.bed12"
+bed_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.filtered.transcripts.bed12"
+bed_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.transcripts.bed12"
+gtf_sim="$root/resources/gencode.v19.annotation.ENS_compatible.union_exons.gtf"
+gtf_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.filtered.union_exons.gtf"
+gtf_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.union_exons.gtf"
+tmp_dir="$root/tmp/count"
+wrapper_script="$root/scripts/run_transcript_counting.sh"
+count_script="$root/scripts/bam_bed12_bedtools_intersect_to_count_table.pl"
+normalization_script="$root/scripts/tab_raw_counts_to_rpkm_tab.R"
+
+#<--- Simulations, 1 million reads --->#
+bash "$wrapper_script" --bam "$root/seq_libs/sim_1.gen.bam" --bed12 "$bed_sim" --gtf "$gtf_sim" --count-table "$root/estimates/sim_1.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Simulations, 3 million reads --->#
+bash "$wrapper_script" --bam "$root/seq_libs/sim_3.gen.bam" --bed12 "$bed_sim" --gtf "$gtf_sim" --count-table "$root/estimates/sim_3.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Simulations, 10 million reads --->#
+bash "$wrapper_script" --bam "$root/seq_libs/sim_10.gen.bam" --bed12 "$bed_sim" --gtf "$gtf_sim" --count-table "$root/estimates/sim_10.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Simulations, 30 million reads --->#
+bash "$wrapper_script" --bam "$root/seq_libs/sim_30.gen.bam" --bed12 "$bed_sim" --gtf "$gtf_sim" --count-table "$root/estimates/sim_30.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Simulations, 100 million reads --->#
+bash "$wrapper_script" --bam "$root/seq_libs/sim_100.gen.bam" --bed12 "$bed_sim" --gtf "$gtf_sim" --count-table "$root/estimates/sim_100.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Human, replicate 1 --->#
+bash "$wrapper_script" --bam "$root/seq_libs/mRNAseq_391-2_Jurkat.genomic.bam" --bed12 "$bed_hsa" --gtf "$gtf_hsa" --count-table "$root/estimates/hsa_1.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Human, replicate 2 --->#
+bash "$wrapper_script" --bam "$root/seq_libs/mRNAseq_393-2_Jurkat.genomic.bam" --bed12 "$bed_hsa" --gtf "$gtf_hsa" --count-table "$root/estimates/hsa_2.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Mouse, replicate 1 --->#
+bash "$wrapper_script" --bam "$root/seq_libs/mRNAseq_391-1_NIH-3T3.genomic.bam" --bed12 "$bed_mmu" --gtf "$gtf_mmu" --count-table "$root/estimates/mmu_1.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"
+
+#<--- Mouse, replicate 2 --->#
+bash "$wrapper_script" --bam "$root/seq_libs/mRNAseq_393-1_NIH-3T3.genomic.bam" --bed12 "$bed_mmu" --gtf "$gtf_mmu" --count-table "$root/estimates/mmu_2.genes.Counting_Transcript.estimates" --temporary-directory "$tmp_dir" --keep-temporary-directory --allow-multi-sites --allow-overlaps --normalize --bam-sort-threads "$sort_threads" --bam-sort-memory "$sort_memory" --count-script "$count_script" --normalization-script "$normalization_script"

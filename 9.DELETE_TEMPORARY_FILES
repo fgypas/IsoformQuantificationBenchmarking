@@ -1,0 +1,28 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 26-MAY-2015                                       ###
+#########################################################
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+
+################
+### CLEAN UP ###
+################
+
+# Remove temporary files
+rm --recursive --force "$root/tmp"

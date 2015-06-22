@@ -1,0 +1,53 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 26-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# Normalized per-processing site counts are autonomously calculated for the two replicates of both human and mouse
+# samples, based on the count tables resulting from analyzing the A-seq-2 sequencing libraries according to the
+# '3B.PROCESS_ASEQ_(INTERACTIVE)', located in *this* directory. Alternatively, count tables can be obtained from:
+# Human: "http://www.clipz.unibas.ch/benchmarking/data/aseq_counts_per_polyA_site.hsa.gz"
+# Mouse: "http://www.clipz.unibas.ch/benchmarking/data/aseq_counts_per_polyA_site.mmu.gz"
+# However, in that case the files need first to be downloaded, extracted, renamed to "counts.hs" and "counts.mm"
+# respectively, and copied to "tmp/polyA" (relative to the directory where *this* file is located) before executing the
+# script. Normalized counts are represented as 'processing sites per million processing sites'. Execution of this
+# script is very fast and requires very little memory.
+
+# As with all wrapper scripts in step 4, the resulting count tables can also be obtained from:
+# "http://www.clipz.unibas.ch/benchmarking/data/count_tables.tar.gz"
+# and extracted in "./estimates", relative to *this* directory.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+
+##########################################
+###  GET A-SEQ-2 EXPRESSION ESTIMATES  ###
+##########################################
+
+# The normalized A-seq-2 estimates (as 'processing sites per million processing sites') are written to directory
+# './estimates', relative to *this* directory.
+
+# Calculate 'processing sites per million processing sites' (PPM) for both human and mouse replicates
+awk '(FNR == 1) {next}; (FNR == NR) {sum += $2; next}; {printf("%s\t%.15f\n", $1, ($2 / sum * 1000000))}' "$root/tmp/polyA/counts.hs"{,} > "$root/estimates/hsa_1.processing_sites.A-seq-2.reference"
+awk '(FNR == 1) {next}; (FNR == NR) {sum += $3; next}; {printf("%s\t%.15f\n", $1, ($3 / sum * 1000000))}' "$root/tmp/polyA/counts.hs"{,} > "$root/estimates/hsa_2.processing_sites.A-seq-2.reference"
+awk '(FNR == 1) {next}; (FNR == NR) {sum += $2; next}; {printf("%s\t%.15f\n", $1, ($2 / sum * 1000000))}' "$root/tmp/polyA/counts.mm"{,} > "$root/estimates/mmu_1.processing_sites.A-seq-2.reference"
+awk '(FNR == 1) {next}; (FNR == NR) {sum += $3; next}; {printf("%s\t%.15f\n", $1, ($3 / sum * 1000000))}' "$root/tmp/polyA/counts.mm"{,} > "$root/estimates/mmu_2.processing_sites.A-seq-2.reference"

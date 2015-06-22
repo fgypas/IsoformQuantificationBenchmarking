@@ -1,0 +1,89 @@
+########################################################################
+### Foivos Gypas & Alexander Kanitz, Biozentrum, University of Basel ###
+### foivos.gypas@unibas.ch & alexander.kanitz@unibas.ch              ###
+### 01-JUN-2015                                                      ###
+########################################################################
+
+
+################
+####  NOTES  ###
+################
+
+# The software Flux Simulator (available at http://sammeth.net/confluence/display/SIM/Home) is used to simulate mRNA
+# expression and sequencing, thus generating both a 'ground truth' expression profile as well as a read library in
+# FASTA format which can be processed analogous to experimental RNA-Seq data. It is important to note that the read
+# simulation is *NOT* reproducible. If you want to generate exactly the same results that we did, you should use the
+# expression profile provided with the resources (downloaded in step 2; should afterwards be available at
+# "./resources/flux_simulator.profile" relative to *this* directory) and the read libraries available on our companion
+# homepage (http://www.clipz.unibas.ch/benchmarking) or the SRA (under accession 'SRP051039').
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# 1. Set root path (replace THIS_DIR with the directory where *this* file is located) and create a temporary directory
+root=<THIS_DIR>
+mkdir --parents "$root/tmp/sim"
+
+# 2. Download/extract required resources & make a copy of the Flux Simulator parameter file in the temporary directory
+wget --directory-prefix "$root/resources" "http://www.clipz.unibas.ch/benchmarking/data/resources.tar.gz"
+tar xzvf "$root/resources/resources.tar.gz"
+cp "$root/resources/flux_simulator.params" "$root/tmp/sim"
+
+######################
+### SIMULATE READS ###
+######################
+
+# 3. Filter GTF annotation file
+# As Flux Simulator was developed for simulating the expression of long (m)RNA transcripts, we first discard, based on
+# the annotated gene and transcript types, those transcripts that are likely to be short and/or originate from gene
+# loci that likely give rise to short stable transcripts.
+grep -v --perl-regex "gene_type \"(miRNA|misc_RNA|rRNA|snoRNA|snRNA|Mt_rRNA|Mt_tRNA)\"" "$root/resources/gencode.v19.annotation.ENS_compatible.gtf" | \
+grep -v --perl-regex "transcript_type \"(miRNA|misc_RNA|rRNA|snoRNA|snRNA|Mt_rRNA|Mt_tRNA)\"" > <2>
+						
+# 4. Simulate expression and generate read libraries
+# A 'ground truth' expression profile and 'synthetic' read libraries are generated with Flux Simulator. Conveniently,
+# a parameter file can be passed to the program. After execution of step 2, such a file should now be available at
+# "./resources/flux_simulator.params", relative to this directory. Before running step 4, open the file with an editor
+# and change the first three parameter arguments according to the instructions in that file. The output read sequences
+# file in FASTA format is generated at "$root/tmp/sim/flux_simulator.fasta". Replace placeholder 4 in step 5 with the
+# path. As the simulaton of expression, sequencing biases and reads can take a considerable amount of time, it is
+# recommended to enable multi-threading by replacing INT with the number of desired cores.
+flux-simulator --parameter "$root/tmp/sim/flux_simulator.params" --express --library --sequence --threads <INT>						
+
+# 5. Generate single end reads
+# Flux Simulator is not able to generate single-end read libraries directly. However, by selectively discarding the
+# second, antisense mates, a directional single-end library can be created retroactively.
+python "$root/scripts/generate_single_end_reads_from_paired_end.py" "$root/tmp/sim/flux_simulator.fasta" > <5>
+						
+# 6. Remove PolyA tail
+# As Flux Simulator simulates the presence of polyA tails at transcript ends, reads harbouring fragments of such tails
+# should be discarded prior to aligning reads to references.
+cutadapt --adapter "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" --error-rate 0.1 --minimum-length 15 --overlap 1 --output <6> <5>
+						
+# 7. Downsample read library
+# In our study, we used read depths of 1, 3, 10, 30 and 100 million reads for the simulated/synthetic read libraries.
+# Since we specified a billion reads/read pairs as the target read number in the Flux Simulator parameter file,
+# the library was iteratively downsampled to yield, approximately, the desired read depths. Because Flux Simulator does
+# not generate precisely the number of requested reads/read pairs (we did, in fact, observe considerable deviations
+# from the target), it is necessary to determine the total number of generated reads (e.g. by grep -c '<' <FASTA>).
+# Dividing 100 million by the resulting read number yields the fraction that needs to replace the FLOAT placeholder in
+# the first downsampling iteration. This step should generate approximately 100 million reads.
+python "$root/scripts/downsample_fasta.py" <6> <FLOAT> <7>
+
+# 8. Downsample read library
+# This step should generate approximately 30 million reads.
+python "$root/scripts/downsample_fasta.py" <7> 0.3 <8>
+
+# 9. Downsample read library
+# This step should generate approximately 10 million reads.
+python "$root/scripts/downsample_fasta.py" <8> 0.3333333 <9>
+
+# 10. Downsample read library
+# This step should generate approximately 3 million reads.
+python "$root/scripts/downsample_fasta.py" <9> 0.3 <10>
+
+# 11. Downsample read library
+# This step should generate approximately 1 million reads.
+python "$root/scripts/downsample_fasta.py" <10> 0.3333333 <11>

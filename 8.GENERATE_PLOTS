@@ -1,0 +1,114 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 31-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# Based on the data matrices generated in step "7.ANALYZE_PERFORMANCE", this script generates the majority of the plots
+# that make up the figures in the manuscript. However, plots for figures 4B/C, S3, S4, S11, S13B/C, S15 & S16 are
+# generated during step "7.ANALYZE_PERFORMANCE". And figure S1 is a schematic drawing and is therefore not generated.
+# Finally, figures 1 and S2 are also not generated, because the runtime and memory consumption analyses are inherently
+# difficult to reproduce on different systems. Please contact us if you are interested in such analyses and need advice.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+# Make output directory
+mkdir --parents ""$root/plots"
+
+
+########################
+###  GENERATE PLOTS  ###
+########################
+
+# Generates figures 2A and S7A
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.trx.R" "$root"
+
+# Generates figures 2B and S7B
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.gene.R" "$root"
+
+# Generates figure 2C
+Rscript "$root/scripts/plot.accuracy_per_bin.expression.trx.R" "$root"
+
+# Generates figure 2D
+Rscript "$root/scripts/plot.accuracy_per_bin.expression.gene.R" "$root"
+
+# Generates figure 3A
+Rscript "$root/scripts/plot.accuracy_per_bin.transcript_length.trx.R" "$root"
+
+# Generates figure 3B
+Rscript "$root/scripts/plot.accuracy_per_bin.gc_content.trx.R" "$root"
+
+# Generates figure 3C
+Rscript "$root/scripts/plot.accuracy_per_bin.exons_per_transcript.trx.R" "$root"
+
+# Generates figure 3D
+Rscript "$root/scripts/plot.accuracy_per_bin.transcripts_per_gene.gene.R" "$root"
+
+# Generates figures 4A and S13A
+Rscript "$root/scripts/plot.accuracy_per_category.replicate_agreement.no_filter.R" "$root"
+
+# Generates figures 4D, S13D, S14A and S14B
+Rscript "$root/scripts/plot.accuracy_per_category.replicate_agreement.pas_filter.R" "$root"
+
+# Generates figures 5A and 5B
+Rscript "$root/scripts/plot.accuracy_per_category.aseq_agreement.R" "$root"
+
+# Generates figures 5C and 5D
+Rscript "$root/scripts/plot.accuracy_per_bin.gene_types.gene.R" "$root"
+
+# Generates figure S5A
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.metrics.trx.expressed.R" "$root"
+
+# Generates figure S5B
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.metrics.gene.expressed.R" "$root"
+
+# Generates figures S6A and S6C
+Rscript "$root/scripts/plot.true_false_pos_neg_vs_read_depth.trx.all.R" "$root"
+
+# Generates figure S6E
+Rscript "$root/scripts/plot.true_false_pos_neg_vs_read_depth.trx.low_expressed.R" "$root"
+
+# Generates figures S6B and S6D
+Rscript "$root/scripts/plot.true_false_pos_neg_vs_read_depth.gene.all.R" "$root"
+
+# Generates figure S6F
+Rscript "$root/scripts/plot.true_false_pos_neg_vs_read_depth.gene.low_expressed.R" "$root"
+
+# Generates figures S8A and S8C
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.aligners.trx.R" "$root"
+
+# Generates figures S8B and S8D
+Rscript "$root/scripts/plot.accuracy_vs_read_depth.aligners.gene.R" "$root"
+
+# Generates figure S9A
+Rscript "$root/scripts/plot.accuracy.bias_correction.sim.trx.R" "$root"
+
+# Generates figure S9B
+Rscript "$root/scripts/plot.accuracy.bias_correction.sim.gene.R" "$root"
+
+# Generates figures S10A through S10D
+Rscript "$root/scripts/plot.expression.cdf.sim.R" "$root"
+
+# Generates figure S12
+Rscript "$root/scripts/plot.accuracy_per_bin.standard_deviations.R" "$root"
+
+# Generates figures S17A to S17D
+Rscript "$root/scripts/plot.accuracy_per_category.aseq_agreement.bias_correction.R" "$root"

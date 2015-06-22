@@ -1,0 +1,233 @@
+#!/bin/bash
+
+#########################################################
+### Alexander Kanitz, Biozentrum, University of Basel ###
+### alexander.kanitz@unibas.ch                        ###
+### 28-MAY-2015                                       ###
+#########################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# The benchmarked methods differ in how they report the expression levels of transcripts which they deem 'not
+# expressed'. While some methods report zeros/"NA" for such features, others omit these cases from the output
+# altogether. On the other hand, BitSeq and MMSEQ report non-zero 'prior' probabilities for transcripts that are not
+# supported by read evidence. In this script, the estimate (RPKM or Mu) tables that were extracted from the output of
+# the different methods in step '4C.GET_METHOD_ESTIMATES' are 'streamlined', such that each table will report values
+# for all features. Furthermore, since none of the methods provides expression estimates for 3'-end processing sites,
+# and only a few provide gene-level expression estimates, estimates for missing feature types are computed by
+# aggregation/summing of corresponding expression estimates.
+
+# Autonomous execution of this script should be unproblematic, as it does not require many resources and is relatively
+# fast. Estimates are read from directory './estimates' (relative to *this* directory), relying on simple naming
+# conventions. Additional estimate tables could be easily copied to the folder and would thus be available for the
+# downstream analysis scripts.
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+# Make temporary directory
+mkdir --parents "$root/tmp/expr"
+
+
+##############
+###  MAIN  ###
+##############
+
+#<--- SET GLOBAL PARAMETERS --->#
+estimates_directory="$root/estimates"
+filter_aggregate_script="$root/scripts/tab_add_remove_aggregate_features_tab.R"
+trx_2_gen_sim="$root/resources/gencode.v19.annotation.ENS_compatible.trx_gene_lookup_table"
+trx_2_pas_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.filtered.trx_pas_lookup_table"
+pas_2_gen_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.filtered.pas_gene_lookup_table"
+trx_2_pas_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.trx_pas_lookup_table"
+pas_2_gen_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.filtered.pas_gene_lookup_table"
+trx_2_gen_hsa_no_filter="$trx_2_gen_sim"
+trx_2_gen_mmu_no_filter="$root/resources/gencode.vM2.annotation.ENS_compatible.trx_gene_lookup_table"
+subsets_hsa="$root/resources/feature_subsets.hsa.R"
+subsets_mmu="$root/resources/feature_subsets.mmu.R"
+subsets_sim="$root/resources/feature_subsets.sim.R"
+
+
+#<--- DEFINE FUNCTIONS --->#
+
+#<--- Check for availability of corresponding gene estimates --->#
+correspondingGeneEstimatesAvailable ()
+{
+	declare -a array=("${!1}")
+	local dirName="$2"
+	array[1]="genes"
+	baseName=$(IFS='.' ; echo "${array[*]}")
+	fileName="${dirName}"/"${baseName}"
+	[ -f "$fileName" ]
+}
+
+#<--- ITERATE OVER FILES IN DERIVE PARAMETERS FROM SAMPLE NAME --->#
+for estimates in "$estimates_directory"/*; do
+
+	#<--- DERIVE PARAMETERS FROM SAMPLE NAME --->#
+
+	#<--- Get estimates basename --->#
+	base=`basename "$estimates"`
+
+	#<--- Split estimates basename by '.' --->#
+	IFS='.' read -a estimatesFields <<< "$base"
+
+	#<--- Validate estimates basename field array --->#
+	if [ "${#estimatesFields[@]}" -ne 4 ]; then
+		echo "The file '$estimates' does not look like a valid estimates file of the form 'experiment.feature_type.method.suffix'! Skipped."
+		continue
+	fi
+
+	#<--- Derive parameters from estimates basename --->#
+	experiment="${estimatesFields[0]}"
+	feature_type="${estimatesFields[1]}"
+	method="${estimatesFields[2]}"
+	suffix="${estimatesFields[3]}"
+
+	#<--- Split experiment name by '_' --->#
+	IFS='_' read -a experimentFields <<< "$experiment"
+
+	#<--- Validate experiment name field array --->#
+	if [ "${#experimentFields[@]}" -ne 2 ]; then
+		echo "The file '$estimates' does not contain a valid experiment field of the type 'sampleType_identifier'! Skipped."
+		continue
+	fi
+
+	#<--- Derive parameters from estimates basename --->#
+	sample_type="${experimentFields[0]}"
+
+
+	#<--- EXECUTE COMMAND DEPENDING ON SAMPLE TYPE, FEATURE TYPE AND THE AVAILABILITY OF CORRESPONDING ESTIMATES --->#
+
+	#<--- Simulated sequencing libraries --->#
+	if   [[ $sample_type == "sim" ]]; then
+
+		#<--- Transcript estimates --->#
+		if   [[ $feature_type == "transcripts" ]]; then
+
+			#<--- Corresponding gene estimates present --->#
+			if correspondingGeneEstimatesAvailable estimatesFields[@] $estimates_directory; then
+
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_sim"
+
+			#<--- Corresponding gene estimates absent --->#
+			else
+
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_sim" --derive-gene-from-transcript-estimates --transcript-to-gene-id "$trx_2_gen_sim"
+			fi
+
+		#<--- Gene estimates --->#
+		elif [[ $feature_type == "genes" ]]; then
+			Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --gene-estimates "$estimates" --feature-subsets-R "$subsets_sim"
+
+		#<--- Unknown/forbidden feature type --->#
+		else
+			echo "The feature type '$feature_type' is unknown or not allowed for sample type '$sample_type'! File '$estimates' skipped."
+			continue
+		fi	
+
+	#<--- Experimental sequencing libraries --->#
+	elif [[ $sample_type == "hsa" || $sample_type == "mmu" ]]; then
+
+		#<--- Transcript estimates --->#
+		if   [[ $feature_type == "transcripts" ]]; then
+
+			#<--- Corresponding gene estimates present --->#
+			if correspondingGeneEstimatesAvailable estimatesFields[@] $estimates_directory; then
+
+				#<--- Human sample --->#
+				if [[ $sample_type == "hsa" ]]; then
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_hsa"
+
+				#<--- Mouse sample --->#
+				else
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_mmu"
+				fi
+
+			#<--- Corresponding gene estimates absent --->#
+			else
+
+				#<--- Human sample --->#
+				if [[ $sample_type == "hsa" ]]; then
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_hsa" --derive-gene-from-transcript-estimates --transcript-to-gene-id "$trx_2_gen_hsa_no_filter"
+
+				#<--- Mouse sample --->#
+				else
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_mmu" --derive-gene-from-transcript-estimates --transcript-to-gene-id "$trx_2_gen_mmu_no_filter"
+				fi
+
+			fi
+
+			#<--- Human sample --->#
+			if [[ $sample_type == "hsa" ]]; then
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_hsa" --derive-processing-site-estimates --derive-gene-from-processing-site-estimates --transcript-to-processing-site-id "$trx_2_pas_hsa" --processing-site-to-gene-id "$pas_2_gen_hsa"
+
+			#<--- Mouse sample --->#
+			else
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --transcript-estimates "$estimates" --feature-subsets-R "$subsets_mmu" --derive-processing-site-estimates --derive-gene-from-processing-site-estimates --transcript-to-processing-site-id "$trx_2_pas_mmu" --processing-site-to-gene-id "$pas_2_gen_mmu"
+			fi
+
+		#<--- Processing site estimates --->#
+		elif [[ $feature_type == "processing_sites" ]]; then
+
+			#<--- Human sample --->#
+			if [[ $sample_type == "hsa" ]]; then
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --processing-site-estimates "$estimates" --feature-subsets-R "$subsets_hsa" --derive-gene-from-processing-site-estimates --processing-site-to-gene-id "$pas_2_gen_hsa"
+
+			#<--- Mouse sample --->#
+			else
+				Rscript $filter_aggregate_script --method "$method" --experiment "$experiment" --output-directory "$root/tmp/expr" --suffix "$suffix" --processing-site-estimates "$estimates" --feature-subsets-R "$subsets_mmu" --derive-gene-from-processing-site-estimates --processing-site-to-gene-id "$pas_2_gen_mmu"
+			fi
+
+		#<--- Gene estimates --->#
+		elif [[ $feature_type == "genes" ]]; then
+
+			#<--- Human sample --->#
+			if [[ $sample_type == "hsa" ]]; then
+				Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --gene-estimates "$estimates" --feature-subsets-R "$subsets_hsa"
+
+			#<--- Mouse sample --->#
+			else
+				Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}_no_filter" --output-directory "$root/tmp/expr" --suffix "$suffix" --gene-estimates "$estimates" --feature-subsets-R "$subsets_mmu"
+			fi
+
+			#<--- Counting sample --->#
+			if [[ $method =~ "Counting" ]]; then
+
+				#<--- Human sample --->#
+				if [[ $sample_type == "hsa" ]]; then
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}" --output-directory "$root/tmp/expr" --suffix "$suffix" --gene-estimates "$estimates" --feature-subsets-R "$subsets_hsa"
+
+				#<--- Mouse sample --->#
+				else
+					Rscript $filter_aggregate_script --method "$method" --experiment "${experiment}" --output-directory "$root/tmp/expr" --suffix "$suffix" --gene-estimates "$estimates" --feature-subsets-R "$subsets_mmu"
+				fi
+
+			fi
+
+		#<--- Unknown/forbidden feature type --->#
+		else
+			echo "The feature type '$feature_type' is unknown or not allowed for sample type '$sample_type'! File '$estimates' skipped."
+			continue
+		fi
+
+	#<--- Unknown sample type --->#
+	else
+		echo "Unknown sample type '$sample_type'! File '$estimates' skipped."
+		continue
+	fi
+
+done

@@ -1,0 +1,163 @@
+#!/bin/bash
+
+########################################################################
+### Foivos Gypas & Alexander Kanitz 				     ###
+### foivos.gypas@unibas.ch & alexander.kanitz@unibas.ch              ###
+### 04-JUN-2015   						     ###
+### Biozentrum, University of Basel                                  ###
+########################################################################
+
+
+###############
+###  NOTES  ###
+###############
+
+# DOC
+# DOC
+
+
+#########################
+###  USER PARAMETERS  ###
+#########################
+
+# Parameters for running methods
+threads=8          # Use N concurrent threads (default: 8)
+
+
+########################
+###  PRE-REQUISITES  ###
+########################
+
+# Shell options
+set -e
+set -u
+set -o pipefail
+
+# Set script directory as root directory
+root=$(cd "$(dirname "$0" )" && pwd)
+
+
+###########################
+###  GLOBAL PARAMETERS  ###
+###########################
+
+wrapper_script="$root/scripts/run_methods.sh"
+fasta_hsa="$root/resources/Homo_sapiens.GRCh37.74.cdna_ncrna.GC_compatible.fa"
+fasta_mmu="$root/resources/Mus_musculus.GRCm38.74.cdna_ncrna.GC_compatible.fa"
+gtf_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.gtf"
+gtf_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.gtf"
+trx_2_gene_hsa="$root/resources/gencode.v19.annotation.ENS_compatible.trx_gene_lookup_table"
+trx_2_gene_mmu="$root/resources/gencode.vM2.annotation.ENS_compatible.trx_gene_lookup_table"
+
+
+###################
+### RUN METHODS ###
+###################
+
+# Simulations, 1 million reads
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/sim_1.trx.bam" \
+"$root/seq_libs/sim_1.gen.bam" \
+"$root/estimates/sim_1" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/sim_1.fq.gz"
+
+# Simulations, 1 million reads
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/sim_3.trx.bam" \
+"$root/seq_libs/sim_3.gen.bam" \
+"$root/estimates/sim_3" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/sim_3.fq.gz"
+
+# Simulations, 10 million reads
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/sim_10.trx.bam" \
+"$root/seq_libs/sim_10.gen.bam" \
+"$root/estimates/sim_10" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/sim_10.fq.gz"
+
+# Simulations, 30 million reads
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/sim_30.trx.bam" \
+"$root/seq_libs/sim_30.gen.bam" \
+"$root/estimates/sim_30" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/sim_30.fq.gz"
+
+# Simulations, 100 million reads
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/sim_100.trx.bam" \
+"$root/seq_libs/sim_100.gen.bam" \
+"$root/estimates/sim_100" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/sim_100.fq.gz"
+
+# Human, replicate 1
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/mRNAseq_391-2_Jurkat.transcriptomic.bam" \
+"$root/seq_libs/mRNAseq_391-2_Jurkat.genomic.bam" \
+"$root/estimates/hsa_1" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/mRNAseq_391-2_Jurkat.fastq.gz"
+
+# Human, replicate 2
+bash "$wrapper_script" \
+"$root" \
+"$fasta_hsa" \
+"$gtf_hsa" \
+"$root/seq_libs/mRNAseq_393-2_Jurkat.transcriptomic.bam" \
+"$root/seq_libs/mRNAseq_393-2_Jurkat.genomic.bam" \
+"$root/estimates/hsa_2" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/mRNAseq_393-2_Jurkat.fastq.gz"
+
+# Mouse, replicate 1
+bash "$wrapper_script" \
+"$root" \
+"$fasta_mmu" \
+"$gtf_mmu" \
+"$root/seq_libs/mRNAseq_391-1_NIH-3T3.transcriptomic.bam" \
+"$root/seq_libs/mRNAseq_391-1_NIH-3T3.genomic.bam" \
+"$root/estimates/mmu_1" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/mRNAseq_391-1_NIH-3T3.fastq.gz"
+
+# Mouse, replicate 2
+bash "$wrapper_script" \
+"$root" \
+"$fasta_mmu" \
+"$gtf_mmu" \
+"$root/seq_libs/mRNAseq_393-1_NIH-3T3.transcriptomic.bam" \
+"$root/seq_libs/mRNAseq_393-1_NIH-3T3.genomic.bam" \
+"$root/estimates/sim_100" \
+"$threads" \
+"$trx_2_gene_hsa" \
+"$root/seq_libs/mRNAseq_393-1_NIH-3T3.fastq.gz"
