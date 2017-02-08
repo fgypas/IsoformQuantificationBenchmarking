@@ -7,4 +7,4 @@ This repository contains the scripts that were used for the preparation of the f
 * URL: <https://genomebiology.biomedcentral.com/articles/10.1186/s13059-015-0702-5>
 * Companion website: <http://www.clipz.unibas.ch/benchmarking/>
 
-For more information on our research, visit our [lab homepage](http://www.biozentrum.unibas.ch/research/groups-platforms/overview/unit/zavolan/) or follow us on Twitter: [@ZavolanLab](https://twitter.com/ZavolanLab)
+For more information on our research, visit our [lab homepage](http://www.biozentrum.unibas.ch/research/groups-platforms/overview/unit/zavolan/) or follow us on [Twitter](https://twitter.com/ZavolanLab).
